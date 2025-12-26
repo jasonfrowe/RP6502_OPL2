@@ -135,51 +135,51 @@ uint32_t song_xram_ptr = 0;
 uint16_t wait_ticks = 0;
 
 void update_song() {
-    // 1. Handle waiting
+    // 1. If we are currently in a delay, count down and exit.
     if (wait_ticks > 0) {
         wait_ticks--;
         return;
     }
 
-    // 2. Main playback loop
+    // 2. We are at a tick where events need to play.
     while (1) {
         RIA.addr0 = song_xram_ptr;
         RIA.step0 = 1;
 
         uint8_t type = RIA.rw0;
         
-        if (type == 0xFF) { 
-            song_xram_ptr = 0; 
-            wait_ticks = 0; 
-            opl_silence();
-            return; 
+        if (type == 0xFF) { // End of Song
+            song_xram_ptr = 0;
+            wait_ticks = 0;
+            opl_init();
+            return;
         }
 
         uint8_t chan = RIA.rw0;
         uint8_t note = RIA.rw0;
         uint8_t vel  = RIA.rw0;
-
-        // Read the delay to wait AFTER this command
+        
+        // Read 16-bit delay to wait AFTER this note
         uint8_t d_lo = RIA.rw0;
         uint8_t d_hi = RIA.rw0;
-        uint16_t delay_after = (d_hi << 8) | d_lo;
+        uint16_t delta_after = (d_hi << 8) | d_lo;
 
-        // --- Execute OPL2 Command ---
+        // Process Note
         switch(type) {
             case 0: OPL_NoteOff(chan); break;
             case 1: OPL_SetVolume(chan, vel); OPL_NoteOn(chan, note); break;
             case 3: OPL_SetPatch(chan, &gm_bank[note]); break;
         }
 
-        // --- Move to next 6-byte block ---
+        // Advance to NEXT 6-byte event
         song_xram_ptr += 6;
 
-        // --- Handle Delay ---
-        if (delay_after > 0) {
-            wait_ticks = delay_after;
-            return; // Exit until next VSync
+        // If the Python script said to wait after this note, set timer and exit loop
+        if (delta_after > 0) {
+            wait_ticks = delta_after;
+            return; 
         }
         
-        // If delay is 0, loop immediately to play the next simultaneous note
+        // If delta_after is 0, the 'while' loop continues to play simultaneous notes
     }
 }
