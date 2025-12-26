@@ -2,6 +2,7 @@
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "cmake.showSystemKits": false,
     "cmake.preferredGenerators": [
+        "Ninja",
         "Unix Makefiles",
     ],
     "cmake.options.advanced": {
@@ -12,4 +13,5 @@
             "statusBarVisibility": "hidden",
         }
     },
+    "C_Cpp.errorSquiggles": "disabled",
 }

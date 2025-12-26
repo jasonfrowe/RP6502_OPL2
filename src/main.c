@@ -1,7 +1,7 @@
 #include <rp6502.h>
 #include <stdio.h>
 
-void main()
+int main(void)
 {
-    puts("Hello, world!");
+    puts("Hello from LLVM-MOS");
 }
