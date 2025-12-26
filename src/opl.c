@@ -39,17 +39,32 @@ uint16_t midi_to_opl_freq(uint8_t midi_note) {
 void opl_write(uint8_t reg, uint8_t data) {
     RIA.addr0 = 0xFF00;
     RIA.step0 = 1;
-    RIA.rw0 = reg;
-    RIA.rw0 = data;
+    
+    RIA.rw0 = reg;   // Write Index
+    
+    // Short delay: approx 4 microseconds at 8MHz
+    __asm__("nop"); __asm__("nop"); __asm__("nop"); __asm__("nop");
+    __asm__("nop"); __asm__("nop"); __asm__("nop"); __asm__("nop");
+
+    RIA.rw0 = data;  // Write Data
+    
+    // Longer delay: approx 24 microseconds
+    // This ensures the OPL2 is ready for the NEXT command
+    for(uint8_t i=0; i<32; i++) { __asm__("nop"); }
 }
 
 void OPL_NoteOn(uint8_t channel, uint8_t midi_note) {
     if (channel == 8) {
         // Simple Percussion Mapping
-        if (midi_note == 35 || midi_note == 36) OPL_SetPatch(8, &drum_bd);
-        else if (midi_note == 38 || midi_note == 40) OPL_SetPatch(8, &drum_snare);
-        else OPL_SetPatch(8, &drum_hihat);
-        
+        if (midi_note == 35 || midi_note == 36) {
+            OPL_SetPatch(8, &drum_bd);
+        } else if (midi_note == 38 || midi_note == 40) {
+            OPL_SetPatch(8, &drum_snare);
+            channel = 7; // Snare uses channel 7 operator
+        } else {
+            OPL_SetPatch(8, &drum_hihat);
+            channel = 6; // Hi-Hat uses channel 6 operator
+        }
         // Drums usually play at a fixed high pitch in OPL2 
         // regardless of the MIDI note
         midi_note = 60; 
@@ -66,12 +81,12 @@ void OPL_NoteOff(uint8_t channel) {
     opl_write(0xB0 + channel, shadow_b0[channel]); // Write stored octave/freq with KeyOn=0
 }
 
+// Clear all 256 registers correctly
 void opl_clear() {
     for (int i = 0; i < 256; i++) {
-        opl_write(false, i);
-        opl_write(true,  0x00);
+        opl_write(i, 0x00);
     }
-    // Clear shadow memory too
+    // Reset shadow memory
     for (int i=0; i<9; i++) shadow_b0[i] = 0;
 }
 
@@ -88,6 +103,33 @@ void OPL_SetVolume(uint8_t chan, uint8_t velocity) {
     opl_write(0x40 + car_offsets[chan], (shadow_ksl_c[chan] & 0xC0) | vol);
 }
 
+void opl_init() {
+    // 1. Silence all 9 channels immediately (Key-Off)
+    // Register 0xB0-0xB8 controls Key-On
+    for (uint8_t i = 0; i < 9; i++) {
+        opl_write(0xB0 + i, 0x00);
+        shadow_b0[i] = 0;
+    }
+
+    // 2. Wipe every OPL2 hardware register (0x01 to 0xF5)
+    // This ensures that leftovers from a previous program 
+    // (like long Release times or weird Waveforms) are gone.
+    for (int i = 0x01; i <= 0xF5; i++) {
+        opl_write(i, 0x00);
+    }
+
+    // 3. Re-enable the features we need
+    opl_write(0x01, 0x20); // Enable Waveform Select
+    opl_write(0xBD, 0x00); // Ensure Melodic Mode
+}
+
+void opl_silence() {
+    // Just kill the 9 voices (Key-Off)
+    for (uint8_t i = 0; i < 9; i++) {
+        opl_write(0xB0 + i, 0x00);
+        shadow_b0[i] = 0;
+    }
+}
 
 uint32_t song_xram_ptr = 0;
 uint16_t wait_ticks = 0;
@@ -109,7 +151,7 @@ void update_song() {
         if (type == 0xFF) { 
             song_xram_ptr = 0; 
             wait_ticks = 0; 
-            opl_clear(); 
+            opl_silence();
             return; 
         }
 

@@ -139,13 +139,16 @@ const OPL_Patch drum_bd    = { .m_ave=0x00, .m_ksl=0x0D, .m_atdec=0xE8, .m_susre
 const OPL_Patch drum_snare = { .m_ave=0x06, .m_ksl=0x00, .m_atdec=0xF0, .m_susrel=0xF0, .m_wave=0x00, .c_ave=0x00, .c_ksl=0x00, .c_atdec=0xF7, .c_susrel=0xF7, .c_wave=0x00, .feedback=0x0E };
 const OPL_Patch drum_hihat = { .m_ave=0x05, .m_ksl=0x00, .m_atdec=0xF0, .m_susrel=0x77, .m_wave=0x00, .c_ave=0x00, .c_ksl=0x00, .c_atdec=0xFA, .c_susrel=0xEA, .c_wave=0x00, .feedback=0x0E };
 
+// Ensure the Patch Setup hits the correct OPL2 operators
 void OPL_SetPatch(uint8_t channel, const OPL_Patch* p) {
-    // OPL2 Operator offsets for channels 0-8
-    static const uint8_t mod_offsets[] = {0x00, 0x01, 0x02, 0x08, 0x09, 0x0A, 0x10, 0x11, 0x12};
-    static const uint8_t car_offsets[] = {0x03, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x13, 0x14, 0x15};
+    static const uint8_t mod_offsets[] = {0x00,0x01,0x02,0x08,0x09,0x0A,0x10,0x11,0x12};
+    static const uint8_t car_offsets[] = {0x03,0x04,0x05,0x0B,0x0C,0x0D,0x13,0x14,0x15};
     
     uint8_t m = mod_offsets[channel];
     uint8_t c = car_offsets[channel];
+
+    // Save KSL for volume calculations
+    shadow_ksl_c[channel] = p->c_ksl;
 
     opl_write(0x20 + m, p->m_ave);
     opl_write(0x20 + c, p->c_ave);
