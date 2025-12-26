@@ -42,17 +42,23 @@ void opl_write(uint8_t reg, uint8_t data) {
     RIA.addr0 = 0xFF00;
     RIA.step0 = 1;
     
-    RIA.rw0 = reg;   // Write Index
-    
-    // Short delay: approx 4 microseconds at 8MHz
-    __asm__("nop"); __asm__("nop"); __asm__("nop"); __asm__("nop");
-    __asm__("nop"); __asm__("nop"); __asm__("nop"); __asm__("nop");
+    RIA.rw0 = reg;   // Write Index (FF00)
+    RIA.rw0 = data;  // Write Data  (FF01)
+    // Any delays are now handled by the FIFO in hardware
+}
 
-    RIA.rw0 = data;  // Write Data
-    
-    // Longer delay: approx 24 microseconds
-    // This ensures the OPL2 is ready for the NEXT command
-    for(uint8_t i=0; i<32; i++) { __asm__("nop"); }
+void opl_silence_all() {
+    // Send Note-Off to all 9 channels
+    // We let these go through the FIFO so they are timed correctly
+    for (uint8_t i = 0; i < 9; i++) {
+        opl_write(0xB0 + i, 0x00);
+    }
+}
+
+void opl_fifo_clear() {
+    RIA.addr1 = 0xFF02; // Our new FIFO flush register
+    RIA.step1 = 0;
+    RIA.rw1 = 1;         // Trigger flush
 }
 
 void OPL_NoteOn(uint8_t channel, uint8_t midi_note) {
@@ -140,51 +146,49 @@ void update_song() {
     }
 
     while (1) {
-        // SET ADDRESS ONCE PER EVENT (Saves many CPU cycles)
+        // Point to the next 6-byte event
         RIA.addr0 = song_xram_ptr;
         RIA.step0 = 1;
 
-        // Read all 6 bytes. The RIA increments addr0 automatically after each read.
         uint8_t type = RIA.rw0;
-        uint8_t chan = RIA.rw0;
-        uint8_t note = RIA.rw0;
-        uint8_t vel  = RIA.rw0;
-        uint8_t d_lo = RIA.rw0;
-        uint8_t d_hi = RIA.rw0;
-        uint16_t delta_after = (d_hi << 8) | d_lo;
-
         if (type == 0xFF) { 
-            song_xram_ptr = 0;
-            wait_ticks = 0;
-            opl_init();
-            return;
+            opl_silence_all();    // Kill any pending notes in hardware buffer
+            song_xram_ptr = 0; 
+            wait_ticks = 0; 
+            opl_init(); 
+            return; 
         }
 
-        // Process logic (The "Heavy" part)
+        uint8_t chan = RIA.rw0;
+        uint8_t d1   = RIA.rw0; // f_low or patch_id
+        uint8_t d2   = RIA.rw0; // f_high (KeyOn + Block + FHigh)
+        
+        uint8_t d_lo = RIA.rw0;
+        uint8_t d_hi = RIA.rw0;
+        uint16_t delay_after = (d_hi << 8) | d_lo;
+
+        // Process precomputed data
         switch(type) {
-            case 0: OPL_NoteOff(chan); break;
-            case 1: OPL_SetVolume(chan, vel); OPL_NoteOn(chan, note); break;
-            case 3: 
-                if (note >= 128 && note <= 130) {
-                    channel_is_drum[chan] = 1;
-                    if (note == 128) OPL_SetPatch(chan, &drum_bd);
-                    else if (note == 129) OPL_SetPatch(chan, &drum_snare);
-                    else OPL_SetPatch(chan, &drum_hihat);
-                } else {
-                    channel_is_drum[chan] = 0;
-                    if (note <= 127) OPL_SetPatch(chan, &gm_bank[note]);
-                }
+            case 0: // Note Off
+                opl_write(0xB0 + chan, 0x00); 
+                break;
+            case 1: // Note On
+                opl_write(0xA0 + chan, d1);
+                opl_write(0xB0 + chan, d2);
+                break;
+            case 3: // Patch Change
+                if (d1 == 128) OPL_SetPatch(chan, &drum_bd);
+                else if (d1 == 129) OPL_SetPatch(chan, &drum_snare);
+                else if (d1 == 130) OPL_SetPatch(chan, &drum_hihat);
+                else OPL_SetPatch(chan, &gm_bank[d1]);
                 break;
         }
 
-        // Increment our C-side pointer by the 6 bytes we just read
         song_xram_ptr += 6;
 
-        if (delta_after > 0) {
-            wait_ticks = delta_after;
+        if (delay_after > 0) {
+            wait_ticks = delay_after;
             return; 
         }
-        // If delta is 0, we loop. The next 'RIA.addr0 = song_xram_ptr' 
-        // will snap the RIA to the next event.
     }
 }

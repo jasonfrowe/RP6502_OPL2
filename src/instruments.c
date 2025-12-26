@@ -148,7 +148,8 @@ void OPL_SetPatch(uint8_t channel, const OPL_Patch* p) {
     uint8_t c = car_offsets[channel];
 
     // Save KSL for volume calculations
-    shadow_ksl_c[channel] = p->c_ksl;
+    // shadow_ksl_c[channel] = p->c_ksl;
+    const uint8_t* p_bytes = (const uint8_t*)p;
 
     opl_write(0x20 + m, p->m_ave);
     opl_write(0x20 + c, p->c_ave);

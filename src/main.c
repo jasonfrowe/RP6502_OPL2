@@ -12,10 +12,10 @@ bool music_enabled = true;
 // Change this to match the VSYNC_RATE in your Python script
 #define SONG_HZ 120 
 
-uint8_t missed_frames = 0;
 
 int main() {
     // ... Hardware Startup ...
+    opl_fifo_clear(); 
     opl_init(); 
     opl_write(0x01, 0x20);
 
@@ -23,13 +23,6 @@ int main() {
     uint16_t timer_accumulator = 0;
 
     while (1) {
-
-         // Check if we missed a frame (vsync jumped by more than 1)
-        if ((uint8_t)(RIA.vsync - vsync_last) > 1) {
-            missed_frames++;
-            printf("Missed Frames: %lu\n", missed_frames);
-            // If this increments, your OPL2 engine is too heavy!
-        }
 
         if (RIA.vsync == vsync_last)
             continue;

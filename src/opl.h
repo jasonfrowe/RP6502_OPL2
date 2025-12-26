@@ -23,5 +23,7 @@ extern void opl_write(uint8_t reg, uint8_t value);
 extern void update_song();
 extern void OPL_SetVolume(uint8_t chan, uint8_t velocity);
 extern void opl_init();
+extern void opl_fifo_clear();
+extern void opl_silence_all();
 
 #endif // OPL_H
