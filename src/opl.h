@@ -1,0 +1,23 @@
+#ifndef OPL_H
+#define OPL_H
+
+typedef struct {
+    uint16_t delay_ms; 
+    uint8_t type;      // 0: Off, 1: On, 3: Patch
+    uint8_t channel;   
+    uint8_t note;      
+    uint8_t velocity;  // Unused for now
+} SongEvent;
+
+extern uint8_t shadow_b0[9]; 
+
+extern uint16_t current_event_idx;
+extern uint16_t ticks_until_next_event;
+
+extern void OPL_NoteOn(uint8_t channel, uint8_t midi_note);
+extern void OPL_NoteOff(uint8_t channel);
+extern void opl_clear();
+extern void opl_write(uint8_t reg, uint8_t value);
+extern void update_song();
+
+#endif // OPL_H
