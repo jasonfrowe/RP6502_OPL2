@@ -10,6 +10,10 @@ typedef struct {
 } OPL_Patch;
 
 extern const OPL_Patch gm_bank[];
+extern const OPL_Patch drum_bd;
+extern const OPL_Patch drum_snare;
+extern const OPL_Patch drum_hihat;
+
 extern void OPL_SetPatch(uint8_t channel, const OPL_Patch* patch);
 
 #endif // INSTRUMENTS_H

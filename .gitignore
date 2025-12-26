@@ -1,4 +1,5 @@
 __pycache__
 /.rp6502
 /build
+midi
 CMakeUserPresets.json

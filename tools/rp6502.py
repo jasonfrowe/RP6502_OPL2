@@ -18,6 +18,7 @@ import platform
 import sys
 import select
 import ctypes
+import glob
 from typing import Union
 
 # Detect POSIX terminal
@@ -38,7 +39,13 @@ class Console:
         if platform.system() == "Windows":
             return "COM1"
         elif platform.system() == "Darwin":
-            return "/dev/cu.usbmodem"
+            # return "/dev/cu.usbmodem"
+            # Dynamically find the first usbmodem device
+            devices = glob.glob("/dev/tty.usbmodem*")
+            if devices:
+                devices.sort()
+                return devices[1]
+            return "/dev/tty.usbmodem11401" # Fallback if detection fails
         elif platform.system() == "Linux":
             return "/dev/ttyACM0"
         else:
