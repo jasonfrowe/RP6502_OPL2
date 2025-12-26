@@ -23,15 +23,16 @@ int main() {
     uint16_t timer_accumulator = 0;
 
     while (1) {
-        // Wait for VSync (60Hz)
-        while (RIA.vsync == vsync_last);
 
-        // Check if we missed a frame (vsync jumped by more than 1)
+         // Check if we missed a frame (vsync jumped by more than 1)
         if ((uint8_t)(RIA.vsync - vsync_last) > 1) {
             missed_frames++;
             printf("Missed Frames: %lu\n", missed_frames);
             // If this increments, your OPL2 engine is too heavy!
         }
+
+        if (RIA.vsync == vsync_last)
+            continue;
         
         vsync_last = RIA.vsync;
 
