@@ -26,6 +26,6 @@ extern void opl_init();
 extern void opl_fifo_clear();
 extern void opl_silence_all();
 extern void OPL_Config(uint8_t enable, uint16_t addr);
-extern void shutdown_audio();
+// extern void shutdown_audio();
 
 #endif // OPL_H

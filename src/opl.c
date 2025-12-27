@@ -39,11 +39,11 @@ uint16_t midi_to_opl_freq(uint8_t midi_note) {
 }
 
 void opl_write(uint8_t reg, uint8_t data) {
-    RIA.addr0 = 0xFF00;
-    RIA.step0 = 1;
+    RIA.addr1 = 0xFF00;
+    RIA.step1 = 1;
     
-    RIA.rw0 = reg;   // Write Index (FF00)
-    RIA.rw0 = data;  // Write Data  (FF01)
+    RIA.rw1 = reg;   // Write Index (FF00)
+    RIA.rw1 = data;  // Write Data  (FF01)
     // Any delays are now handled by the FIFO in hardware
 }
 
@@ -139,55 +139,101 @@ void opl_silence() {
 uint32_t song_xram_ptr = 0;
 uint16_t wait_ticks = 0;
 
+// void update_song() {
+//     if (wait_ticks > 0) {
+//         wait_ticks--;
+//         return;
+//     }
+
+//     while (1) {
+//         RIA.addr0 = song_xram_ptr;
+//         RIA.step0 = 1;
+
+//         uint8_t type = RIA.rw0;
+//         if (type == 0xFF) { 
+//             song_xram_ptr = 0; wait_ticks = 0;
+//             opl_silence_all(); // Kill hanging notes
+//             return; 
+//         }
+
+//         uint8_t chan = RIA.rw0;
+//         uint8_t d1   = RIA.rw0; // Pre-calculated f_low OR Patch ID
+//         uint8_t d2   = RIA.rw0; // Pre-calculated f_high
+        
+//         uint8_t d_lo = RIA.rw0;
+//         uint8_t d_hi = RIA.rw0;
+//         uint16_t delta_after = (d_hi << 8) | d_lo;
+
+//         switch(type) {
+//             case 0: // Note Off
+//                 opl_write(0xB0 + chan, 0x00); 
+//                 break;
+//             case 1: // Note On
+//                 opl_write(0xA0 + chan, d1);
+//                 opl_write(0xB0 + chan, d2);
+//                 break;
+//             case 3: // Patch Change
+//                 if (d1 == 128) OPL_SetPatch(chan, &drum_bd);
+//                 else if (d1 == 129) OPL_SetPatch(chan, &drum_snare);
+//                 else if (d1 == 130) OPL_SetPatch(chan, &drum_hihat);
+//                 else OPL_SetPatch(chan, &gm_bank[d1]);
+//                 break;
+//         }
+
+//         song_xram_ptr += 6;
+
+//         if (delta_after > 0) {
+//             wait_ticks = delta_after;
+//             return; 
+//         }
+//     }
+// }
+
 void update_song() {
+    // 1. Process waiting
     if (wait_ticks > 0) {
         wait_ticks--;
-        return;
     }
 
-    while (1) {
+    // 2. Only play notes if we aren't waiting anymore
+    if (wait_ticks == 0) {
         RIA.addr0 = song_xram_ptr;
         RIA.step0 = 1;
 
-        uint8_t type = RIA.rw0;
-        if (type == 0xFF) { 
-            song_xram_ptr = 0; wait_ticks = 0;
-            opl_silence_all(); // Kill hanging notes
-            return; 
-        }
+        while (1) {
+            uint8_t reg = RIA.rw0;
+            uint8_t val = RIA.rw0;
+            uint8_t d_lo = RIA.rw0;
+            uint8_t d_hi = RIA.rw0;
+            uint16_t delay = (d_hi << 8) | d_lo;
 
-        uint8_t chan = RIA.rw0;
-        uint8_t d1   = RIA.rw0; // Pre-calculated f_low OR Patch ID
-        uint8_t d2   = RIA.rw0; // Pre-calculated f_high
-        
-        uint8_t d_lo = RIA.rw0;
-        uint8_t d_hi = RIA.rw0;
-        uint16_t delta_after = (d_hi << 8) | d_lo;
+            if (reg == 0xFF) { 
+                song_xram_ptr = 0; 
+                wait_ticks = 0;
+                return; 
+            }
 
-        switch(type) {
-            case 0: // Note Off
-                opl_write(0xB0 + chan, 0x00); 
-                break;
-            case 1: // Note On
-                opl_write(0xA0 + chan, d1);
-                opl_write(0xB0 + chan, d2);
-                break;
-            case 3: // Patch Change
-                if (d1 == 128) OPL_SetPatch(chan, &drum_bd);
-                else if (d1 == 129) OPL_SetPatch(chan, &drum_snare);
-                else if (d1 == 130) OPL_SetPatch(chan, &drum_hihat);
-                else OPL_SetPatch(chan, &gm_bank[d1]);
-                break;
-        }
+            opl_write(reg, val); // Uses Port 1
+            song_xram_ptr = RIA.addr0; // Save progress
 
-        song_xram_ptr += 6;
-
-        if (delta_after > 0) {
-            wait_ticks = delta_after;
-            return; 
+            if (delay > 0) {
+                // Set the wait for future frames
+                wait_ticks = delay;
+                return; 
+            }
+            // If delay is 0, loop and play next write immediately
         }
     }
 }
+
+
+void opl_fifo_flush() {
+    // Ensure the Magic Key (0xAA) matches our Verilog flush logic
+    RIA.addr1 = 0xFF02;
+    RIA.step1 = 0;
+    RIA.rw1 = 0xAA; 
+}
+
 
 void shutdown_audio() {
     opl_silence_all();       // Kill any playing notes

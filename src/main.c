@@ -15,7 +15,7 @@ bool music_enabled = true;
 static uint16_t timer_accumulator = 0;
 
 // Change this to match the VSYNC_RATE in your Python script
-#define SONG_HZ 120 
+#define SONG_HZ 60 
 
 // Manual definitions for CPU control
 #define cli() __asm__ volatile ("cli" ::: "memory")
@@ -62,6 +62,15 @@ int main() {
     cli(); 
 
     while (1) {
+        // if (RIA.vsync == 0) { // Once every 256 frames (~4 seconds)
+        //     opl_write(0x01, 0x20); // Waveform enable
+        //     opl_write(0x20, 0x01); // Modulator
+        //     opl_write(0x40, 0x10);
+        //     opl_write(0x60, 0xF0);
+        //     opl_write(0x80, 0x77);
+        //     opl_write(0xA0, 0x98);
+        //     opl_write(0xB0, 0x31); // KEY ON
+        // }
         // --- GAME LOOP ---
         // You can use a flag to stay in sync with VSync for graphics:
         // if (RIA.vsync != vsync_last) {
