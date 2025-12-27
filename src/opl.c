@@ -146,28 +146,24 @@ void update_song() {
     }
 
     while (1) {
-        // Point to the next 6-byte event
         RIA.addr0 = song_xram_ptr;
         RIA.step0 = 1;
 
         uint8_t type = RIA.rw0;
         if (type == 0xFF) { 
-            opl_silence_all();    // Kill any pending notes in hardware buffer
-            song_xram_ptr = 0; 
-            wait_ticks = 0; 
-            opl_init(); 
+            song_xram_ptr = 0; wait_ticks = 0;
+            opl_silence_all(); // Kill hanging notes
             return; 
         }
 
         uint8_t chan = RIA.rw0;
-        uint8_t d1   = RIA.rw0; // f_low or patch_id
-        uint8_t d2   = RIA.rw0; // f_high (KeyOn + Block + FHigh)
+        uint8_t d1   = RIA.rw0; // Pre-calculated f_low OR Patch ID
+        uint8_t d2   = RIA.rw0; // Pre-calculated f_high
         
         uint8_t d_lo = RIA.rw0;
         uint8_t d_hi = RIA.rw0;
-        uint16_t delay_after = (d_hi << 8) | d_lo;
+        uint16_t delta_after = (d_hi << 8) | d_lo;
 
-        // Process precomputed data
         switch(type) {
             case 0: // Note Off
                 opl_write(0xB0 + chan, 0x00); 
@@ -186,8 +182,8 @@ void update_song() {
 
         song_xram_ptr += 6;
 
-        if (delay_after > 0) {
-            wait_ticks = delay_after;
+        if (delta_after > 0) {
+            wait_ticks = delta_after;
             return; 
         }
     }
