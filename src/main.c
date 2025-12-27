@@ -31,16 +31,12 @@ int main() {
 
 
         if (music_enabled) {
-            // Add the song's frequency to our bucket
-            timer_accumulator += SONG_HZ;
-
-            // While we have at least one 60Hz frame's worth of time in the bucket
-            // (60 is the hardware VSync rate)
-            while (timer_accumulator >= 60) {
-                update_song();
-                timer_accumulator -= 60;
-            }
+        timer_accumulator += SONG_HZ;
+        while (timer_accumulator >= 60) {
+            update_song();
+            timer_accumulator -= 60;
         }
+}
         
         // Game logic here
     }
