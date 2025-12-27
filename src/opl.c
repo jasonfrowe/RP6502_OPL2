@@ -189,6 +189,13 @@ void update_song() {
     }
 }
 
+void shutdown_audio() {
+    opl_silence_all();       // Kill any playing notes
+    opl_fifo_flush();        // Clear the hardware buffer
+    OPL_Config(0, 0xFF00);   // Tell the FPGA to stop listening to the PIX bus
+}
+
+
 void OPL_Config(uint8_t enable, uint16_t addr) {
     // XREG(Device, Channel, Register, Value)
     // Register 0: Enable/Disable
