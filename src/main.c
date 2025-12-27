@@ -50,6 +50,9 @@ __attribute__((interrupt)) void my_vsync_handler(void) {
 int main() {
     // 1. Setup Vector and Hardware
     RIA_IRQ_VEC = (uint16_t)my_vsync_handler;
+
+    OPL_Config(1, 0xFF00);
+
     opl_init(); 
     
     // 2. Load song to XRAM...

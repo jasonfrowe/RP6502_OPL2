@@ -25,5 +25,6 @@ extern void OPL_SetVolume(uint8_t chan, uint8_t velocity);
 extern void opl_init();
 extern void opl_fifo_clear();
 extern void opl_silence_all();
+extern void OPL_Config(uint8_t enable, uint16_t addr);
 
 #endif // OPL_H

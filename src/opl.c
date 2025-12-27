@@ -188,3 +188,17 @@ void update_song() {
         }
     }
 }
+
+void OPL_Config(uint8_t enable, uint16_t addr) {
+    // XREG(Device, Channel, Register, Value)
+    // Register 0: Enable/Disable
+    // xregn(2, 0, 0, enable);
+    // 4 parameters: text mode, 8-bit, config, plane
+    // xregn(1, 0, 1, 4, 1, 3, TEXT_CONFIG, 2);
+
+    // Args: dev(1), chan(0), reg(9), count(3)
+    xregn(2, 0, 0, 2, enable, addr);
+    
+    // Register 1: Base Address
+    // xregn(2, 0, 1, addr);
+}
