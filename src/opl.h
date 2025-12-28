@@ -1,6 +1,8 @@
 #ifndef OPL_H
 #define OPL_H
 
+#define OPL_ADDR 0xEF00
+
 typedef struct {
     uint16_t delay_ms; 
     uint8_t type;      // 0: Off, 1: On, 3: Patch
@@ -26,6 +28,9 @@ extern void opl_init();
 extern void opl_fifo_clear();
 extern void opl_silence_all();
 extern void OPL_Config(uint8_t enable, uint16_t addr);
+extern void music_refill_buffer();
 // extern void shutdown_audio();
+
+extern void music_init(const char* filename);
 
 #endif // OPL_H

@@ -5,6 +5,9 @@
 #include "opl.h"
 #include "instruments.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 // F-Number table for Octave 4 @ 4.0 MHz
 const uint16_t fnum_table[12] = {
     308, 325, 345, 365, 387, 410, 434, 460, 487, 516, 547, 579
@@ -39,7 +42,7 @@ uint16_t midi_to_opl_freq(uint8_t midi_note) {
 }
 
 void opl_write(uint8_t reg, uint8_t data) {
-    RIA.addr1 = 0xFF00;
+    RIA.addr1 = OPL_ADDR; // OPL Write Index
     RIA.step1 = 1;
     
     RIA.rw1 = reg;   // Write Index (FF00)
@@ -189,42 +192,42 @@ uint16_t wait_ticks = 0;
 //     }
 // }
 
-void update_song() {
-    // 1. Process waiting
-    if (wait_ticks > 0) {
-        wait_ticks--;
-    }
+// void update_song() {
+//     // 1. Process waiting
+//     if (wait_ticks > 0) {
+//         wait_ticks--;
+//     }
 
-    // 2. Only play notes if we aren't waiting anymore
-    if (wait_ticks == 0) {
-        RIA.addr0 = song_xram_ptr;
-        RIA.step0 = 1;
+//     // 2. Only play notes if we aren't waiting anymore
+//     if (wait_ticks == 0) {
+//         RIA.addr0 = song_xram_ptr;
+//         RIA.step0 = 1;
 
-        while (1) {
-            uint8_t reg = RIA.rw0;
-            uint8_t val = RIA.rw0;
-            uint8_t d_lo = RIA.rw0;
-            uint8_t d_hi = RIA.rw0;
-            uint16_t delay = (d_hi << 8) | d_lo;
+//         while (1) {
+//             uint8_t reg = RIA.rw0;
+//             uint8_t val = RIA.rw0;
+//             uint8_t d_lo = RIA.rw0;
+//             uint8_t d_hi = RIA.rw0;
+//             uint16_t delay = (d_hi << 8) | d_lo;
 
-            if (reg == 0xFF) { 
-                song_xram_ptr = 0; 
-                wait_ticks = 0;
-                return; 
-            }
+//             if (reg == 0xFF) { 
+//                 song_xram_ptr = 0; 
+//                 wait_ticks = 0;
+//                 return; 
+//             }
 
-            opl_write(reg, val); // Uses Port 1
-            song_xram_ptr = RIA.addr0; // Save progress
+//             opl_write(reg, val); // Uses Port 1
+//             song_xram_ptr = RIA.addr0; // Save progress
 
-            if (delay > 0) {
-                // Set the wait for future frames
-                wait_ticks = delay;
-                return; 
-            }
-            // If delay is 0, loop and play next write immediately
-        }
-    }
-}
+//             if (delay > 0) {
+//                 // Set the wait for future frames
+//                 wait_ticks = delay;
+//                 return; 
+//             }
+//             // If delay is 0, loop and play next write immediately
+//         }
+//     }
+// }
 
 
 void opl_fifo_flush() {
@@ -238,7 +241,7 @@ void opl_fifo_flush() {
 void shutdown_audio() {
     opl_silence_all();       // Kill any playing notes
     opl_fifo_flush();        // Clear the hardware buffer
-    OPL_Config(0, 0xFF00);   // Tell the FPGA to stop listening to the PIX bus
+    OPL_Config(0, OPL_ADDR);   // Tell the FPGA to stop listening to the PIX bus
 }
 
 
@@ -254,4 +257,63 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
     
     // Register 1: Base Address
     // xregn(2, 0, 1, addr);
+}
+
+
+static int music_fd = -1;
+static uint8_t music_buffer[512];
+static uint16_t music_idx = 512; // Force initial load
+static uint16_t music_wait_ticks = 0;
+
+void music_init(const char* filename) {
+    if (music_fd >= 0) close(music_fd);
+    music_fd = open(filename, O_RDONLY);
+    music_idx = 512; 
+    music_wait_ticks = 0;
+}
+
+void update_song() {
+    if (music_wait_ticks > 0) {
+        music_wait_ticks--;
+    }
+
+    if (music_wait_ticks == 0 && music_fd >= 0) {
+        while (music_wait_ticks == 0) {
+            
+            // --- BLOCK TRANSITION ---
+            if (music_idx >= 512) {
+                int bytes = read(music_fd, music_buffer, 512);
+                if (bytes <= 0) {
+                    // Loop the file
+                    lseek(music_fd, 0, SEEK_SET);
+                    read(music_fd, music_buffer, 512);
+                }
+                music_idx = 0;
+            }
+
+            // Read 4 bytes from RAM
+            uint8_t reg = music_buffer[music_idx++];
+            uint8_t val = music_buffer[music_idx++];
+            uint8_t d_lo = music_buffer[music_idx++];
+            uint8_t d_hi = music_buffer[music_idx++];
+            uint16_t delay = (d_hi << 8) | d_lo;
+
+            // --- END OF SONG ---
+            if (reg == 0xFF) {
+                lseek(music_fd, 0, SEEK_SET);
+                music_idx = 512; // Force fresh read on next tick
+                music_wait_ticks = 0;
+                return;
+            }
+
+            // Skip NOP padding (Reg 0) unless it carries a delay
+            if (reg != 0 || delay > 0) {
+                opl_write(reg, val);
+            }
+
+            if (delay > 0) {
+                music_wait_ticks = delay;
+            }
+        }
+    }
 }
