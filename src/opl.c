@@ -260,28 +260,53 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
 }
 
 
-// File and Buffer state
 static int music_fd = -1;
 static uint8_t music_buffer[512];
-static uint16_t music_buf_idx = 512; // Force initial read
+static uint16_t music_buf_idx = 0;
+static int16_t music_bytes_in_buffer = 0; // Tracks actual valid data in RAM
 static uint16_t music_wait_ticks = 0;
+static bool music_error_state = false;
 
 void music_init(const char* filename) {
     music_fd = open(filename, O_RDONLY);
-    music_buf_idx = 512;
+    music_buf_idx = 0;
+    music_bytes_in_buffer = 0;
     music_wait_ticks = 0;
+    music_error_state = false;
+
+    if (music_fd < 0) {
+        printf("Music: Failed to open %s\n", filename);
+        music_error_state = true;
+    }
 }
 
-// Internal helper to get bytes from the RAM buffer
 static uint8_t get_stream_byte() {
-    if (music_buf_idx >= 512) {
-        // Blocking read: Fetches 512 bytes from USB to RAM
-        int bytes = read(music_fd, music_buffer, 512);
+    // If we've exhausted the current valid bytes in the buffer
+    if (music_buf_idx >= music_bytes_in_buffer) {
         
-        if (bytes <= 0) {
-            // End of file: Loop to start
-            lseek(music_fd, 0, SEEK_SET);
-            read(music_fd, music_buffer, 512);
+        music_bytes_in_buffer = read(music_fd, music_buffer, 512);
+        
+        // --- Error Handling ---
+        if (music_bytes_in_buffer < 0) {
+            printf("Music: Read Error. Disabling playback.\n");
+            music_error_state = true;
+            return 0;
+        }
+
+        // --- End of File Handling ---
+        if (music_bytes_in_buffer == 0) {
+            // Attempt to loop
+            if (lseek(music_fd, 0, SEEK_SET) == -1) {
+                printf("Music: Lseek Error. Disabling playback.\n");
+                music_error_state = true;
+                return 0;
+            }
+            
+            music_bytes_in_buffer = read(music_fd, music_buffer, 512);
+            if (music_bytes_in_buffer <= 0) {
+                music_error_state = true; // Something is wrong with the file
+                return 0;
+            }
         }
         music_buf_idx = 0;
     }
@@ -289,35 +314,38 @@ static uint8_t get_stream_byte() {
 }
 
 void update_song() {
-    // 1. Decrement the wait counter if it's active
+    if (music_error_state || music_fd < 0) return;
+
     if (music_wait_ticks > 0) {
         music_wait_ticks--;
     }
 
-    // 2. Only play notes if we are not waiting anymore
     if (music_wait_ticks == 0) {
-        if (music_fd < 0) return;
+        while (music_wait_ticks == 0 && !music_error_state) {
+            // Read exactly 4 bytes into a local array
+            // This prevents "byte slipping" if a disk read happens mid-packet
+            uint8_t pkt[4];
+            pkt[0] = get_stream_byte(); // Reg
+            pkt[1] = get_stream_byte(); // Val
+            pkt[2] = get_stream_byte(); // Delay Low
+            pkt[3] = get_stream_byte(); // Delay High
 
-        while (1) {
-            uint8_t reg  = get_stream_byte();
-            uint8_t val  = get_stream_byte();
-            uint8_t d_lo = get_stream_byte();
-            uint8_t d_hi = get_stream_byte();
-            uint16_t delay = ((uint16_t)d_hi << 8) | d_lo;
+            if (music_error_state) return;
 
-            // Sentinel check
-            if (reg == 0xFF) {
+            // Check for Sentinel
+            if (pkt[0] == 0xFF) {
                 lseek(music_fd, 0, SEEK_SET);
-                music_buf_idx = 512; // Use the correct variable name
+                music_bytes_in_buffer = 0;
+                music_buf_idx = 0;
                 music_wait_ticks = 0;
                 return;
             }
 
-            opl_write(reg, val);
+            opl_write(pkt[0], pkt[1]);
+            uint16_t delay = ((uint16_t)pkt[3] << 8) | pkt[2];
 
             if (delay > 0) {
                 music_wait_ticks = delay;
-                return; // Exit this tick
             }
         }
     }
