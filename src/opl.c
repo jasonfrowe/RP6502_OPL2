@@ -5,6 +5,8 @@
 #include "opl.h"
 #include "instruments.h"
 
+#include <errno.h>
+
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -59,7 +61,7 @@ void opl_silence_all() {
 }
 
 void opl_fifo_clear() {
-    RIA.addr1 = 0xFF02; // Our new FIFO flush register
+    RIA.addr1 = OPL_ADDR + 2; // Our new FIFO flush register
     RIA.step1 = 0;
     RIA.rw1 = 1;         // Trigger flush
 }
@@ -232,7 +234,7 @@ uint16_t wait_ticks = 0;
 
 void opl_fifo_flush() {
     // Ensure the Magic Key (0xAA) matches our Verilog flush logic
-    RIA.addr1 = 0xFF02;
+    RIA.addr1 = OPL_ADDR + 2;
     RIA.step1 = 0;
     RIA.rw1 = 0xAA; 
 }
@@ -259,58 +261,20 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
     // xregn(2, 0, 1, addr);
 }
 
-
 static int music_fd = -1;
 static uint8_t music_buffer[512];
 static uint16_t music_buf_idx = 0;
-static int16_t music_bytes_in_buffer = 0; // Tracks actual valid data in RAM
+static uint16_t music_bytes_ready = 0; 
 static uint16_t music_wait_ticks = 0;
 static bool music_error_state = false;
 
 void music_init(const char* filename) {
+    if (music_fd >= 0) close(music_fd);
     music_fd = open(filename, O_RDONLY);
     music_buf_idx = 0;
-    music_bytes_in_buffer = 0;
+    music_bytes_ready = 0;
     music_wait_ticks = 0;
-    music_error_state = false;
-
-    if (music_fd < 0) {
-        printf("Music: Failed to open %s\n", filename);
-        music_error_state = true;
-    }
-}
-
-static uint8_t get_stream_byte() {
-    // If we've exhausted the current valid bytes in the buffer
-    if (music_buf_idx >= music_bytes_in_buffer) {
-        
-        music_bytes_in_buffer = read(music_fd, music_buffer, 512);
-        
-        // --- Error Handling ---
-        if (music_bytes_in_buffer < 0) {
-            printf("Music: Read Error. Disabling playback.\n");
-            music_error_state = true;
-            return 0;
-        }
-
-        // --- End of File Handling ---
-        if (music_bytes_in_buffer == 0) {
-            // Attempt to loop
-            if (lseek(music_fd, 0, SEEK_SET) == -1) {
-                printf("Music: Lseek Error. Disabling playback.\n");
-                music_error_state = true;
-                return 0;
-            }
-            
-            music_bytes_in_buffer = read(music_fd, music_buffer, 512);
-            if (music_bytes_in_buffer <= 0) {
-                music_error_state = true; // Something is wrong with the file
-                return 0;
-            }
-        }
-        music_buf_idx = 0;
-    }
-    return music_buffer[music_buf_idx++];
+    music_error_state = (music_fd < 0);
 }
 
 void update_song() {
@@ -321,28 +285,69 @@ void update_song() {
     }
 
     if (music_wait_ticks == 0) {
-        while (music_wait_ticks == 0 && !music_error_state) {
-            // Read exactly 4 bytes into a local array
-            // This prevents "byte slipping" if a disk read happens mid-packet
-            uint8_t pkt[4];
-            pkt[0] = get_stream_byte(); // Reg
-            pkt[1] = get_stream_byte(); // Val
-            pkt[2] = get_stream_byte(); // Delay Low
-            pkt[3] = get_stream_byte(); // Delay High
+        while (music_wait_ticks == 0) {
+            
+            uint16_t available = music_bytes_ready - music_buf_idx;
+            
+            if (available < 4) {
+                // ... (Keep your existing "Move leftovers" logic) ...
+                for (uint16_t i = 0; i < available; i++) {
+                    music_buffer[i] = music_buffer[music_buf_idx + i];
+                }
+                
+                int requested = 512 - available;
+                int res = read(music_fd, &music_buffer[available], requested);
+                
+                if (res < 0) {
+                    int err = errno;
+                    printf("Music: Read Error %d\n", err);
+                    music_error_state = true;
+                    return;
+                }
 
-            if (music_error_state) return;
+                if (res == 0) {
+                    // Hit physical EOF. Reset the file.
+                    off_t seek_res = lseek(music_fd, 0, SEEK_SET);
+                    if (seek_res == -1) {
+                        int err = errno;
+                        printf("Music: Lseek Error %d at EOF\n", err);
+                        music_error_state = true;
+                        return;
+                    }
+                    res = read(music_fd, &music_buffer[available], requested);
+                    printf("Music: Buffer Refilled from EOF. Read: %d\n", res);
+                }
 
-            // Check for Sentinel
-            if (pkt[0] == 0xFF) {
-                lseek(music_fd, 0, SEEK_SET);
-                music_bytes_in_buffer = 0;
+                music_bytes_ready = available + res;
+                music_buf_idx = 0;
+            }
+
+            // --- 4-BYTE PACKET ACCESS ---
+            uint8_t reg  = music_buffer[music_buf_idx++];
+            uint8_t val  = music_buffer[music_buf_idx++];
+            uint8_t d_lo = music_buffer[music_buf_idx++];
+            uint8_t d_hi = music_buffer[music_buf_idx++];
+            uint16_t delay = ((uint16_t)d_hi << 8) | d_lo;
+
+            // --- IMPROVED SENTINEL CHECK ---
+            // We check both Reg and Val to ensure it's a real sentinel
+            if (reg == 0xFF && val == 0xFF) {
+                off_t seek_res = lseek(music_fd, 0, SEEK_SET);
+                if (seek_res == -1) {
+                    int err = errno;
+                    printf("Music: Sentinel Lseek Error %d\n", err);
+                    music_error_state = true;
+                } else {
+                    printf("Music: Loop Sentinel Correctly Processed.\n");
+                }
+                // Clear the buffer entirely so we start fresh from the new lseek position
+                music_bytes_ready = 0;
                 music_buf_idx = 0;
                 music_wait_ticks = 0;
                 return;
             }
 
-            opl_write(pkt[0], pkt[1]);
-            uint16_t delay = ((uint16_t)pkt[3] << 8) | pkt[2];
+            opl_write(reg, val);
 
             if (delay > 0) {
                 music_wait_ticks = delay;

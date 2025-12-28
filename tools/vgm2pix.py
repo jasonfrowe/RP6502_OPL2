@@ -85,7 +85,12 @@ def convert_vgm(vgm_path, out_path):
                 last_vsync_int = current_vsync_int
 
     # End Sentinel (0xFF 00 00 00)
-    output.extend(struct.pack('<BBH', 0xFF, 0, 0))
+    output.extend(struct.pack('<BBH', 0xFF, 0xFF, 0))
+
+    # ADD PADDING (16 bytes of zeros)
+    # This prevents the RIA from hitting physical EOF exactly on the sentinel,
+    # making the logic much smoother.
+    output.extend(b'\x00' * 16)
     
     with open(out_path, 'wb') as f:
         f.write(output)
