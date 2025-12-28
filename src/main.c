@@ -15,7 +15,7 @@ bool music_enabled = true;
 static uint16_t timer_accumulator = 0;
 
 // Change this to match the VSYNC_RATE in your Python script
-#define SONG_HZ 60 
+#define SONG_HZ 120 
 
 // Manual definitions for CPU control
 #define cli() __asm__ volatile ("cli" ::: "memory")
@@ -40,7 +40,7 @@ __attribute__((interrupt)) void my_vsync_handler(void) {
         // For 120Hz, this loop will run exactly twice every frame.
         // For 140Hz, it will run twice most frames and three times every few frames.
         while (timer_accumulator >= 60) {
-            update_song(); // MUST use RIA Port 1 (addr1/rw1)
+            update_midi_song(); // MUST use RIA Port 1 (addr1/rw1)
             timer_accumulator -= 60;
         }
     }
