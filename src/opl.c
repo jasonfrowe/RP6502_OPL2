@@ -144,101 +144,12 @@ void opl_silence() {
 uint32_t song_xram_ptr = 0;
 uint16_t wait_ticks = 0;
 
-// void update_song() {
-//     if (wait_ticks > 0) {
-//         wait_ticks--;
-//         return;
-//     }
-
-//     while (1) {
-//         RIA.addr0 = song_xram_ptr;
-//         RIA.step0 = 1;
-
-//         uint8_t type = RIA.rw0;
-//         if (type == 0xFF) { 
-//             song_xram_ptr = 0; wait_ticks = 0;
-//             opl_silence_all(); // Kill hanging notes
-//             return; 
-//         }
-
-//         uint8_t chan = RIA.rw0;
-//         uint8_t d1   = RIA.rw0; // Pre-calculated f_low OR Patch ID
-//         uint8_t d2   = RIA.rw0; // Pre-calculated f_high
-        
-//         uint8_t d_lo = RIA.rw0;
-//         uint8_t d_hi = RIA.rw0;
-//         uint16_t delta_after = (d_hi << 8) | d_lo;
-
-//         switch(type) {
-//             case 0: // Note Off
-//                 opl_write(0xB0 + chan, 0x00); 
-//                 break;
-//             case 1: // Note On
-//                 opl_write(0xA0 + chan, d1);
-//                 opl_write(0xB0 + chan, d2);
-//                 break;
-//             case 3: // Patch Change
-//                 if (d1 == 128) OPL_SetPatch(chan, &drum_bd);
-//                 else if (d1 == 129) OPL_SetPatch(chan, &drum_snare);
-//                 else if (d1 == 130) OPL_SetPatch(chan, &drum_hihat);
-//                 else OPL_SetPatch(chan, &gm_bank[d1]);
-//                 break;
-//         }
-
-//         song_xram_ptr += 6;
-
-//         if (delta_after > 0) {
-//             wait_ticks = delta_after;
-//             return; 
-//         }
-//     }
-// }
-
-// void update_song() {
-//     // 1. Process waiting
-//     if (wait_ticks > 0) {
-//         wait_ticks--;
-//     }
-
-//     // 2. Only play notes if we aren't waiting anymore
-//     if (wait_ticks == 0) {
-//         RIA.addr0 = song_xram_ptr;
-//         RIA.step0 = 1;
-
-//         while (1) {
-//             uint8_t reg = RIA.rw0;
-//             uint8_t val = RIA.rw0;
-//             uint8_t d_lo = RIA.rw0;
-//             uint8_t d_hi = RIA.rw0;
-//             uint16_t delay = (d_hi << 8) | d_lo;
-
-//             if (reg == 0xFF) { 
-//                 song_xram_ptr = 0; 
-//                 wait_ticks = 0;
-//                 return; 
-//             }
-
-//             opl_write(reg, val); // Uses Port 1
-//             song_xram_ptr = RIA.addr0; // Save progress
-
-//             if (delay > 0) {
-//                 // Set the wait for future frames
-//                 wait_ticks = delay;
-//                 return; 
-//             }
-//             // If delay is 0, loop and play next write immediately
-//         }
-//     }
-// }
-
-
 void opl_fifo_flush() {
     // Ensure the Magic Key (0xAA) matches our Verilog flush logic
     RIA.addr1 = OPL_ADDR + 2;
     RIA.step1 = 0;
     RIA.rw1 = 0xAA; 
 }
-
 
 void shutdown_audio() {
     opl_silence_all();       // Kill any playing notes
@@ -248,17 +159,11 @@ void shutdown_audio() {
 
 
 void OPL_Config(uint8_t enable, uint16_t addr) {
-    // XREG(Device, Channel, Register, Value)
-    // Register 0: Enable/Disable
-    // xregn(2, 0, 0, enable);
-    // 4 parameters: text mode, 8-bit, config, plane
-    // xregn(1, 0, 1, 4, 1, 3, TEXT_CONFIG, 2);
+    // Configure OPL Device in FPGA
 
     // Args: dev(1), chan(0), reg(9), count(3)
     xregn(2, 0, 0, 2, enable, addr);
     
-    // Register 1: Base Address
-    // xregn(2, 0, 1, addr);
 }
 
 static int music_fd = -1;
@@ -271,13 +176,34 @@ static bool music_error_state = false;
 void music_init(const char* filename) {
     if (music_fd >= 0) close(music_fd);
     music_fd = open(filename, O_RDONLY);
+    
     music_buf_idx = 0;
-    music_bytes_ready = 0;
     music_wait_ticks = 0;
     music_error_state = (music_fd < 0);
+
+    if (music_error_state) {
+        printf("Music: Failed to open %s\n", filename);
+        return;
+    }
+
+    // 1. Read into the START of the buffer (index 0)
+    int res = read(music_fd, music_buffer, 512);
+                
+    if (res < 0) {
+        int err = errno;
+        printf("Music: Initial Read Error %d\n", err);
+        music_error_state = true;
+        return;
+    }
+
+    // 2. IMPORTANT: Update the count of valid bytes in the buffer
+    // Without this, the sequencer thinks the buffer is empty!
+    music_bytes_ready = res; 
+    
+    printf("Music: Started. Initialized with %d bytes.\n", res);
 }
 
-void update_song() {
+void update_music() {
     if (music_error_state || music_fd < 0) return;
 
     if (music_wait_ticks > 0) {
@@ -286,17 +212,11 @@ void update_song() {
 
     if (music_wait_ticks == 0) {
         while (music_wait_ticks == 0) {
-            
-            uint16_t available = music_bytes_ready - music_buf_idx;
-            
-            if (available < 4) {
-                // ... (Keep your existing "Move leftovers" logic) ...
-                for (uint16_t i = 0; i < available; i++) {
-                    music_buffer[i] = music_buffer[music_buf_idx + i];
-                }
+
+            if (music_buf_idx >= 512){
+                printf("Music: Buffer Refill Triggered.\n");
                 
-                int requested = 512 - available;
-                int res = read(music_fd, &music_buffer[available], requested);
+                int res = read(music_fd, &music_buffer, 512);
                 
                 if (res < 0) {
                     int err = errno;
@@ -305,20 +225,6 @@ void update_song() {
                     return;
                 }
 
-                if (res == 0) {
-                    // Hit physical EOF. Reset the file.
-                    off_t seek_res = lseek(music_fd, 0, SEEK_SET);
-                    if (seek_res == -1) {
-                        int err = errno;
-                        printf("Music: Lseek Error %d at EOF\n", err);
-                        music_error_state = true;
-                        return;
-                    }
-                    res = read(music_fd, &music_buffer[available], requested);
-                    printf("Music: Buffer Refilled from EOF. Read: %d\n", res);
-                }
-
-                music_bytes_ready = available + res;
                 music_buf_idx = 0;
             }
 
@@ -329,29 +235,63 @@ void update_song() {
             uint8_t d_hi = music_buffer[music_buf_idx++];
             uint16_t delay = ((uint16_t)d_hi << 8) | d_lo;
 
-            // --- IMPROVED SENTINEL CHECK ---
-            // We check both Reg and Val to ensure it's a real sentinel
-            if (reg == 0xFF && val == 0xFF) {
-                off_t seek_res = lseek(music_fd, 0, SEEK_SET);
-                if (seek_res == -1) {
-                    int err = errno;
-                    printf("Music: Sentinel Lseek Error %d\n", err);
-                    music_error_state = true;
-                } else {
-                    printf("Music: Loop Sentinel Correctly Processed.\n");
-                }
-                // Clear the buffer entirely so we start fresh from the new lseek position
-                music_bytes_ready = 0;
-                music_buf_idx = 0;
-                music_wait_ticks = 0;
-                return;
-            }
 
-            opl_write(reg, val);
+            if (reg == 0xFF && val == 0xFF) {
+                // off_t seek_res = lseek(music_fd, 0, SEEK_SET);
+                // if (seek_res == -1) {
+                //     int err = errno;
+                //     printf("Music: Sentinel Lseek Error %d\n", err);
+                //     music_error_state = true;
+                // } else {
+                //     printf("Music: Loop Sentinel Correctly Processed.\n");
+                // }
+
+                printf("Music: Sentinel Hit. Re-opening...\n");
+                close(music_fd);
+                music_fd = open(MUSIC_FILENAME, O_RDONLY);
+
+                music_buf_idx = 512; // Force buffer reload
+                delay = 1; // Small delay after loop
+
+            } else {
+                opl_write(reg, val);
+            }
 
             if (delay > 0) {
                 music_wait_ticks = delay;
             }
+
         }
+    }
+}
+
+void debug_test_lseek() {
+    uint8_t start_bytes[4];
+    uint8_t check_bytes[4];
+    off_t pos;
+    
+    // 1. Read first 4 bytes
+    // pos = lseek(music_fd, 0, SEEK_SET);
+    // printf("LSEEK TEST: Initial lseek to pos %ld\n", (long)pos);
+    read(music_fd, start_bytes, 4);
+    
+    // 2. Move away and move back
+    // pos = lseek(music_fd, 1024, SEEK_SET); 
+    // printf("LSEEK TEST: Moved to pos %ld\n", (long)pos);
+    pos = lseek(music_fd, 0, SEEK_SET); 
+    printf("LSEEK TEST: Returned to pos %ld\n", (long)pos);
+    
+    // 3. Read again
+    read(music_fd, check_bytes, 4);
+    
+    printf("LSEEK TEST: First Read: %02X %02X %02X %02X\n", 
+            start_bytes[0], start_bytes[1], start_bytes[2], start_bytes[3]);
+    printf("LSEEK TEST: After Seek: %02X %02X %02X %02X\n", 
+            check_bytes[0], check_bytes[1], check_bytes[2], check_bytes[3]);
+            
+    if (start_bytes[0] == check_bytes[0] && start_bytes[1] == check_bytes[1]) {
+        printf("RESULT: lseek is working correctly.\n");
+    } else {
+        printf("RESULT: lseek FAILED or returned inconsistent data!\n");
     }
 }

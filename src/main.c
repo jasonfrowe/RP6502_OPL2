@@ -19,7 +19,8 @@ int main() {
     opl_init();
 
     // 2. Prepare Music
-    music_init("music.bin");
+    music_init(MUSIC_FILENAME);
+    // debug_test_lseek();
 
     vsync_last = RIA.vsync;
 
@@ -34,7 +35,7 @@ int main() {
         if (music_enabled) {
             timer_accumulator += SONG_HZ;
             while (timer_accumulator >= 60) {
-                update_song();
+                update_music();
                 timer_accumulator -= 60;
             }
         }

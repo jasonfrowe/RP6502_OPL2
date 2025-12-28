@@ -40,7 +40,7 @@ def convert_vgm(vgm_path, out_path):
             reg, val = data[i+1], data[i+2]
             pending_writes.append((reg, val))
             i += 3
-            continue # Don't process timing until a wait cmd
+            continue 
         
         elif cmd == 0x5F: # OPL3 Bank 1 (Ignore for OPL2 hardware)
             i += 3
@@ -65,42 +65,42 @@ def convert_vgm(vgm_path, out_path):
             i += 1
             continue
 
-        # If the accumulated time is enough to cross a VSync integer boundary...
         current_vsync_int = round(vsync_timer)
         delta = current_vsync_int - last_vsync_int
 
         if delta > 0 or pending_writes:
             if pending_writes:
                 for j, (r, v) in enumerate(pending_writes):
-                    # Only the very last write in the cluster carries the wait
                     d = delta if j == len(pending_writes)-1 else 0
                     output.extend(struct.pack('<BBH', r, v, d))
                 
                 pending_writes = []
                 last_vsync_int = current_vsync_int
             elif delta > 0:
-                # If there was a long wait with no writes, insert a No-Op wait
-                # We use register 0x00 (unused) as a dummy wait
                 output.extend(struct.pack('<BBH', 0x00, 0, delta))
                 last_vsync_int = current_vsync_int
 
-    # End Sentinel (0xFF 00 00 00)
+    # 1. Add End Sentinel (4 bytes)
     output.extend(struct.pack('<BBH', 0xFF, 0xFF, 0))
 
-    # ADD PADDING (16 bytes of zeros)
-    # This prevents the RIA from hitting physical EOF exactly on the sentinel,
-    # making the logic much smoother.
-    output.extend(b'\x00' * 16)
+    # 2. CALCULATE PADDING
+    # Determine how many bytes needed to reach a multiple of 512
+    current_len = len(output)
+    remainder = current_len % 512
+    if remainder > 0:
+        padding_needed = 512 - remainder
+        output.extend(b'\x00' * padding_needed)
     
     with open(out_path, 'wb') as f:
         f.write(output)
     
     print(f"File: {vgm_path}")
     print(f"Output: {out_path} ({len(output)} bytes)")
+    print(f"Sectors: {len(output) // 512}")
     print(f"Rate: {TARGET_HZ} Hz")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python vgm2pix.py input.vgm output.bin")
     else:
-        convert_vgm(sys.argv[1], sys.argv[2])
+        convert_vgm(sys.argv[1], sys.argv[2])  
