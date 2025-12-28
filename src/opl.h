@@ -31,7 +31,7 @@ extern void opl_fifo_clear();
 extern void opl_silence_all();
 extern void OPL_Config(uint8_t enable, uint16_t addr);
 extern void music_refill_buffer();
-extern void debug_test_lseek();
+// extern void debug_test_lseek();
 // extern void shutdown_audio();
 
 extern void music_init(const char* filename);

@@ -200,7 +200,7 @@ void music_init(const char* filename) {
     // Without this, the sequencer thinks the buffer is empty!
     music_bytes_ready = res; 
     
-    printf("Music: Started. Initialized with %d bytes.\n", res);
+   //  printf("Music: Started. Initialized with %d bytes.\n", res);
 }
 
 void update_music() {
@@ -214,7 +214,7 @@ void update_music() {
         while (music_wait_ticks == 0) {
 
             if (music_buf_idx >= 512){
-                printf("Music: Buffer Refill Triggered.\n");
+                // printf("Music: Buffer Refill Triggered.\n");
                 
                 int res = read(music_fd, &music_buffer, 512);
                 
@@ -246,7 +246,7 @@ void update_music() {
                 //     printf("Music: Loop Sentinel Correctly Processed.\n");
                 // }
 
-                printf("Music: Sentinel Hit. Re-opening...\n");
+                // printf("Music: Sentinel Hit. Re-opening...\n");
                 close(music_fd);
                 music_fd = open(MUSIC_FILENAME, O_RDONLY);
 
@@ -265,33 +265,33 @@ void update_music() {
     }
 }
 
-void debug_test_lseek() {
-    uint8_t start_bytes[4];
-    uint8_t check_bytes[4];
-    off_t pos;
+// void debug_test_lseek() {
+//     uint8_t start_bytes[4];
+//     uint8_t check_bytes[4];
+//     off_t pos;
     
-    // 1. Read first 4 bytes
-    // pos = lseek(music_fd, 0, SEEK_SET);
-    // printf("LSEEK TEST: Initial lseek to pos %ld\n", (long)pos);
-    read(music_fd, start_bytes, 4);
+//     // 1. Read first 4 bytes
+//     // pos = lseek(music_fd, 0, SEEK_SET);
+//     // printf("LSEEK TEST: Initial lseek to pos %ld\n", (long)pos);
+//     read(music_fd, start_bytes, 4);
     
-    // 2. Move away and move back
-    // pos = lseek(music_fd, 1024, SEEK_SET); 
-    // printf("LSEEK TEST: Moved to pos %ld\n", (long)pos);
-    pos = lseek(music_fd, 0, SEEK_SET); 
-    printf("LSEEK TEST: Returned to pos %ld\n", (long)pos);
+//     // 2. Move away and move back
+//     // pos = lseek(music_fd, 1024, SEEK_SET); 
+//     // printf("LSEEK TEST: Moved to pos %ld\n", (long)pos);
+//     pos = lseek(music_fd, 0, SEEK_SET); 
+//     printf("LSEEK TEST: Returned to pos %ld\n", (long)pos);
     
-    // 3. Read again
-    read(music_fd, check_bytes, 4);
+//     // 3. Read again
+//     read(music_fd, check_bytes, 4);
     
-    printf("LSEEK TEST: First Read: %02X %02X %02X %02X\n", 
-            start_bytes[0], start_bytes[1], start_bytes[2], start_bytes[3]);
-    printf("LSEEK TEST: After Seek: %02X %02X %02X %02X\n", 
-            check_bytes[0], check_bytes[1], check_bytes[2], check_bytes[3]);
+//     printf("LSEEK TEST: First Read: %02X %02X %02X %02X\n", 
+//             start_bytes[0], start_bytes[1], start_bytes[2], start_bytes[3]);
+//     printf("LSEEK TEST: After Seek: %02X %02X %02X %02X\n", 
+//             check_bytes[0], check_bytes[1], check_bytes[2], check_bytes[3]);
             
-    if (start_bytes[0] == check_bytes[0] && start_bytes[1] == check_bytes[1]) {
-        printf("RESULT: lseek is working correctly.\n");
-    } else {
-        printf("RESULT: lseek FAILED or returned inconsistent data!\n");
-    }
-}
+//     if (start_bytes[0] == check_bytes[0] && start_bytes[1] == check_bytes[1]) {
+//         printf("RESULT: lseek is working correctly.\n");
+//     } else {
+//         printf("RESULT: lseek FAILED or returned inconsistent data!\n");
+//     }
+// }
