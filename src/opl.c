@@ -237,7 +237,7 @@ void update_music() {
 
 
             if (reg == 0xFF && val == 0xFF) {
-                // off_t seek_res = lseek(music_fd, 0, SEEK_SET);
+                off_t seek_res = lseek(music_fd, 0, SEEK_SET);
                 // if (seek_res == -1) {
                 //     int err = errno;
                 //     printf("Music: Sentinel Lseek Error %d\n", err);
@@ -245,10 +245,13 @@ void update_music() {
                 // } else {
                 //     printf("Music: Loop Sentinel Correctly Processed.\n");
                 // }
+                
+                // probably not available in rp6502 for LLVM-MOS
+                // f_lseek(music_fd, 0, SEEK_SET);
 
                 // printf("Music: Sentinel Hit. Re-opening...\n");
-                close(music_fd);
-                music_fd = open(MUSIC_FILENAME, O_RDONLY);
+                // close(music_fd);
+                // music_fd = open(MUSIC_FILENAME, O_RDONLY);
 
                 music_buf_idx = 512; // Force buffer reload
                 delay = 1; // Small delay after loop

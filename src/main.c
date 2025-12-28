@@ -44,4 +44,4 @@ int main() {
         // Move sprites, check keys, etc.
         // You can safely use RIA.addr0/rw0 here!
     }
-}
+}  
