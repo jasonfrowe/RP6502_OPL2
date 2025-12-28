@@ -260,59 +260,64 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
 }
 
 
+// File and Buffer state
 static int music_fd = -1;
 static uint8_t music_buffer[512];
-static uint16_t music_idx = 512; // Force initial load
+static uint16_t music_buf_idx = 512; // Force initial read
 static uint16_t music_wait_ticks = 0;
 
 void music_init(const char* filename) {
-    if (music_fd >= 0) close(music_fd);
     music_fd = open(filename, O_RDONLY);
-    music_idx = 512; 
+    music_buf_idx = 512;
     music_wait_ticks = 0;
 }
 
+// Internal helper to get bytes from the RAM buffer
+static uint8_t get_stream_byte() {
+    if (music_buf_idx >= 512) {
+        // Blocking read: Fetches 512 bytes from USB to RAM
+        int bytes = read(music_fd, music_buffer, 512);
+        
+        if (bytes <= 0) {
+            // End of file: Loop to start
+            lseek(music_fd, 0, SEEK_SET);
+            read(music_fd, music_buffer, 512);
+        }
+        music_buf_idx = 0;
+    }
+    return music_buffer[music_buf_idx++];
+}
+
 void update_song() {
+    // 1. Decrement the wait counter if it's active
     if (music_wait_ticks > 0) {
         music_wait_ticks--;
     }
 
-    if (music_wait_ticks == 0 && music_fd >= 0) {
-        while (music_wait_ticks == 0) {
-            
-            // --- BLOCK TRANSITION ---
-            if (music_idx >= 512) {
-                int bytes = read(music_fd, music_buffer, 512);
-                if (bytes <= 0) {
-                    // Loop the file
-                    lseek(music_fd, 0, SEEK_SET);
-                    read(music_fd, music_buffer, 512);
-                }
-                music_idx = 0;
-            }
+    // 2. Only play notes if we are not waiting anymore
+    if (music_wait_ticks == 0) {
+        if (music_fd < 0) return;
 
-            // Read 4 bytes from RAM
-            uint8_t reg = music_buffer[music_idx++];
-            uint8_t val = music_buffer[music_idx++];
-            uint8_t d_lo = music_buffer[music_idx++];
-            uint8_t d_hi = music_buffer[music_idx++];
-            uint16_t delay = (d_hi << 8) | d_lo;
+        while (1) {
+            uint8_t reg  = get_stream_byte();
+            uint8_t val  = get_stream_byte();
+            uint8_t d_lo = get_stream_byte();
+            uint8_t d_hi = get_stream_byte();
+            uint16_t delay = ((uint16_t)d_hi << 8) | d_lo;
 
-            // --- END OF SONG ---
+            // Sentinel check
             if (reg == 0xFF) {
                 lseek(music_fd, 0, SEEK_SET);
-                music_idx = 512; // Force fresh read on next tick
+                music_buf_idx = 512; // Use the correct variable name
                 music_wait_ticks = 0;
                 return;
             }
 
-            // Skip NOP padding (Reg 0) unless it carries a delay
-            if (reg != 0 || delay > 0) {
-                opl_write(reg, val);
-            }
+            opl_write(reg, val);
 
             if (delay > 0) {
                 music_wait_ticks = delay;
+                return; // Exit this tick
             }
         }
     }

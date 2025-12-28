@@ -1,7 +1,7 @@
 #ifndef OPL_H
 #define OPL_H
 
-#define OPL_ADDR 0xEF00
+#define OPL_ADDR 0xFF00
 
 typedef struct {
     uint16_t delay_ms; 
