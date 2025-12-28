@@ -51,7 +51,7 @@ int main() {
     // 1. Setup Vector and Hardware
     RIA_IRQ_VEC = (uint16_t)my_vsync_handler;
 
-    OPL_Config(1, 0xFF00);
+    OPL_Config(1, OPL_ADDR);
 
     opl_init(); 
     

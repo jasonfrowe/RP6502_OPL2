@@ -39,7 +39,7 @@ uint16_t midi_to_opl_freq(uint8_t midi_note) {
 }
 
 void opl_write(uint8_t reg, uint8_t data) {
-    RIA.addr1 = 0xFF00;
+    RIA.addr1 = OPL_ADDR;
     RIA.step1 = 1;
     
     RIA.rw1 = reg;   // Write Index (FF00)
@@ -56,7 +56,7 @@ void opl_silence_all() {
 }
 
 void opl_fifo_clear() {
-    RIA.addr1 = 0xFF02; // Our new FIFO flush register
+    RIA.addr1 =  OPL_ADDR + 2; // Our new FIFO flush register
     RIA.step1 = 0;
     RIA.rw1 = 1;         // Trigger flush
 }
@@ -229,7 +229,7 @@ void update_song() {
 
 void opl_fifo_flush() {
     // Ensure the Magic Key (0xAA) matches our Verilog flush logic
-    RIA.addr1 = 0xFF02;
+    RIA.addr1 = OPL_ADDR + 2;
     RIA.step1 = 0;
     RIA.rw1 = 0xAA; 
 }
@@ -238,7 +238,7 @@ void opl_fifo_flush() {
 void shutdown_audio() {
     opl_silence_all();       // Kill any playing notes
     opl_fifo_flush();        // Clear the hardware buffer
-    OPL_Config(0, 0xFF00);   // Tell the FPGA to stop listening to the PIX bus
+    OPL_Config(0, OPL_ADDR);   // Tell the FPGA to stop listening to the PIX bus
 }
 
 

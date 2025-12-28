@@ -1,6 +1,8 @@
 #ifndef OPL_H
 #define OPL_H
 
+#define OPL_ADDR 0xFF00
+
 typedef struct {
     uint16_t delay_ms; 
     uint8_t type;      // 0: Off, 1: On, 3: Patch
