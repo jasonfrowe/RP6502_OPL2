@@ -88,9 +88,6 @@ The engine utilizes the `timer_accumulator` logic in `main.c` to drive `update_s
 1. **Flash FPGA:** `tinyprog -p top.bin`
 2. **Compile 6502:** Use the RP6502 SDK (LLVM-MOS).
 3. **Upload:**
-   ```bash
-   rp6502.py RP6502_OPL2.rp6502 -a 0x10000:src/music.bin
-   ```
 
 ## 📜 Credits
 - **JTOPL2 Core:** Jose Tejada (Jotego).
